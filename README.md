@@ -13,24 +13,48 @@ v2.0.0
 v1.6.1
 - 支持通过 API 检查种子的 H&R 状态来删除种子
 
+## 环境准备
+
+本说明使用 [uv](https://docs.astral.sh/uv/) 管理 Python 与依赖。若尚未安装，请参考官方文档安装 uv。
+
 ## 安装
 
+全局或当前环境中安装（与 `pip install` 等价，由 uv 加速解析与下载）：
+
 ```bash
-pip install autoremove-torrents-hnr
+uv pip install autoremove-torrents-hnr
+```
+
+仅需要命令行工具、希望隔离依赖时，可使用工具安装（可执行文件由 uv 管理）：
+
+```bash
+uv tool install autoremove-torrents-hnr
 ```
 
 ## 更新
 
 ```bash
-pip install autoremove-torrents-hnr --upgrade
-或者
-pip install autoremove-torrents-hnr==具体版本号
+uv pip install autoremove-torrents-hnr --upgrade
+# 或固定版本
+uv pip install autoremove-torrents-hnr==具体版本号
+```
+
+使用 `uv tool install` 安装的，可执行：
+
+```bash
+uv tool upgrade autoremove-torrents-hnr
 ```
 
 ## 卸载
 
 ```bash
-pip uninstall autoremove-torrents-hnr
+uv pip uninstall autoremove-torrents-hnr
+```
+
+使用 `uv tool install` 安装的：
+
+```bash
+uv tool uninstall autoremove-torrents-hnr
 ```
 
 ## 配置示例
@@ -113,10 +137,33 @@ autoremove-torrents --view --conf=config.yml
 autoremove-torrents --conf=config.yml
 ```
 
+不事先安装包、临时运行一次（由 uv 拉取依赖并执行；包名与可执行名不同，需指定 `--from`）：
+
+```bash
+uvx --from autoremove-torrents-hnr autoremove-torrents --view --conf=config.yml
+uvx --from autoremove-torrents-hnr autoremove-torrents --conf=config.yml
+```
+
+从本仓库源码安装并开发调试：
+
+```bash
+cd /path/to/autoremove-torrents
+uv venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+uv pip install -e .
+autoremove-torrents --conf=config.yml
+```
+
 ## 日志
 
 ```bash
 autoremove-torrents --conf=config.yml --log=logs/autoremove.log --debug
+```
+
+使用 `uvx` 时同样追加参数即可，例如：
+
+```bash
+uvx --from autoremove-torrents-hnr autoremove-torrents --conf=config.yml --log=logs/autoremove.log --debug
 ```
 
 ## 项目结构
