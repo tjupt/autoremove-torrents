@@ -166,6 +166,118 @@ autoremove-torrents --conf=config.yml --log=logs/autoremove.log --debug
 uvx --from autoremove-torrents-hnr autoremove-torrents --conf=config.yml --log=logs/autoremove.log --debug
 ```
 
+## 定时自动运行
+
+定时任务里的环境通常**没有**你在终端里配置的 `PATH`（例如 `uv tool` 会把可执行文件放在 `~/.local/bin`）。请尽量使用**配置文件与日志的绝对路径**，并对 `autoremove-torrents` 使用 **`which autoremove-torrents`（或 `~/.local/bin/autoremove-torrents`）** 得到的绝对路径；若用虚拟环境，则用 **`/path/to/.venv/bin/autoremove-torrents`**。首次上线建议仍用 `--view` 在终端确认行为，再改为正式删除。
+
+### Linux / macOS：cron
+
+编辑当前用户的 crontab：
+
+```bash
+crontab -e
+```
+
+示例：**每 20 分钟**执行一次（请把路径改成你机器上的真实路径）：
+
+```cron
+*/20 * * * * /home/you/.local/bin/autoremove-torrents --conf=/home/you/autoremove/config.yml --log=/home/you/autoremove/logs/run.log >> /home/you/autoremove/logs/cron.log 2>&1
+```
+
+`cron` 表达式从左到右依次为：分、时、日、月、星期。`*/20` 表示从 0 分起每隔 20 分钟触发一次。若需其他周期可自行改写前两个字段（例如每天 03:15 一次为 `15 3 * * *`）。
+
+### macOS：launchd（推荐）
+
+比 `cron` 更易被系统唤醒、日志与权限行为更一致。新建 `~/Library/LaunchAgents/org.tjupt.autoremove-torrents.plist`（标签与文件名可自定）。下方示例用 `StartInterval` 的 `1200`（即 20×60 秒）实现约每 20 分钟触发一次：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>org.tjupt.autoremove-torrents</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/you/.local/bin/autoremove-torrents</string>
+    <string>--conf</string>
+    <string>/Users/you/autoremove/config.yml</string>
+    <string>--log</string>
+    <string>/Users/you/autoremove/logs/run.log</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>1200</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/you/autoremove/logs/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/you/autoremove/logs/launchd.err.log</string>
+</dict>
+</plist>
+```
+
+加载与卸载：
+
+```bash
+launchctl load ~/Library/LaunchAgents/org.tjupt.autoremove-torrents.plist
+launchctl unload ~/Library/LaunchAgents/org.tjupt.autoremove-torrents.plist
+```
+
+修改 plist 后需 `unload` 再 `load` 才会生效。
+
+`StartInterval` 表示上次任务**成功结束后**再等待的秒数，与 cron 按钟表对齐到每小时的 0、20、40 分略有不同；若必须与钟表对齐，可优先使用上文 **cron** 或 Debian 上的 **systemd timer**。
+
+### Debian / Ubuntu：systemd 定时器（示例：每 20 分钟）
+
+适合长期跑在 Linux 服务器、需要与 `journalctl` / `systemctl` 统一管理的场景。以下文件需 **root** 创建或修改。示例假定以 **root** 执行 `uv tool install autoremove-torrents-hnr`，默认可执行文件为 **`/root/.local/bin/autoremove-torrents`**；若改过 `UV_TOOL_DIR` / `XDG_*`，在 root 下用 `uv tool dir --bin` 或 `readlink -f "$(command -v autoremove-torrents)"` 核对后再写入 `ExecStart`。`--conf` / `--log` 请按实际部署改成绝对路径。长期以 root 跑删种权限较大，生产环境更稳妥的做法是改为**普通用户**安装工具并在 `[Service]` 里设置 `User=` 指向该用户。
+
+**1）** `/etc/systemd/system/autoremove-torrents.service`
+
+```ini
+[Unit]
+Description=Auto remove torrents (HNR)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+# Type=oneshot
+# User=you
+# Group=you
+# 使用绝对路径；若在 venv 中安装则改为 /home/you/autoremove/.venv/bin/autoremove-torrents
+# ExecStart=/home/you/.local/bin/autoremove-torrents --conf=/home/you/autoremove/config.yml --log=/home/you/autoremove/logs/run.log
+Environment=HOME=/root
+ExecStart=/root/.local/bin/autoremove-torrents --conf=/root/autoremove/config.yml --log=/root/autoremove/logs/run.log
+```
+
+**2）** `/etc/systemd/system/autoremove-torrents.timer`
+
+```ini
+[Unit]
+Description=Run autoremove-torrents every 20 minutes
+
+[Timer]
+# 对齐到每小时的 0、20、40 分（与 cron */20 的常见语义一致）
+OnCalendar=*-*-* *:00,20,40:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+**3）** 加载并启用定时器：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now autoremove-torrents.timer
+systemctl list-timers autoremove-torrents.timer
+journalctl -u autoremove-torrents.service -n 50 --no-pager
+```
+
+停用：`sudo systemctl disable --now autoremove-torrents.timer`。若 systemd 版本较新且希望用步进写法，可将 `OnCalendar=` 改为 `*-*-* *:0/20:00`（与上面列表形式等价，视本机 `systemd.time(7)` 说明为准）。
+
+### Windows：任务计划程序
+
+打开「任务计划程序」，新建任务：触发器选择「每天」后在「高级设置」中将任务配置为**每 20 分钟重复一次**（或新建「一次」触发器并设置重复间隔 20 分钟，按向导界面为准）；操作选择「启动程序」，程序填 `autoremove-torrents` 的完整路径（或 `cmd.exe` / `powershell.exe` 配合参数），参数示例：`--conf=C:\path\to\config.yml --log=C:\path\to\run.log`。注意任务运行账户下的 `PATH` 是否包含该可执行文件所在目录。
+
 ## 项目结构
 ### 1 客户端模块 (client/)
 - hnr_api.py: H&R API 客户端，用于查询种子的 H&R 状态
