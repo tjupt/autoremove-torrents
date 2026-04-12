@@ -156,14 +156,16 @@ autoremove-torrents --conf=config.yml
 
 ## 日志
 
+`--log` 表示**日志所在目录**（不是单个日志文件路径）；程序会在该目录下按日期生成 `autoremove.YYYY-MM-DD.log`。使用前请确保目录已存在，例如 `mkdir -p logs`。
+
 ```bash
-autoremove-torrents --conf=config.yml --log=logs/autoremove.log --debug
+autoremove-torrents --conf=config.yml --log=logs --debug
 ```
 
 使用 `uvx` 时同样追加参数即可，例如：
 
 ```bash
-uvx --from autoremove-torrents-hnr autoremove-torrents --conf=config.yml --log=logs/autoremove.log --debug
+uvx --from autoremove-torrents-hnr autoremove-torrents --conf=config.yml --log=logs --debug
 ```
 
 ## 定时自动运行
@@ -181,7 +183,7 @@ crontab -e
 示例：**每 20 分钟**执行一次（请把路径改成你机器上的真实路径）：
 
 ```cron
-*/20 * * * * /home/you/.local/bin/autoremove-torrents --conf=/home/you/autoremove/config.yml --log=/home/you/autoremove/logs/run.log >> /home/you/autoremove/logs/cron.log 2>&1
+*/20 * * * * /home/you/.local/bin/autoremove-torrents --conf=/home/you/autoremove/config.yml --log=/home/you/autoremove/logs >> /home/you/autoremove/logs/cron.log 2>&1
 ```
 
 `cron` 表达式从左到右依次为：分、时、日、月、星期。`*/20` 表示从 0 分起每隔 20 分钟触发一次。若需其他周期可自行改写前两个字段（例如每天 03:15 一次为 `15 3 * * *`）。
@@ -203,7 +205,7 @@ crontab -e
     <string>--conf</string>
     <string>/Users/you/autoremove/config.yml</string>
     <string>--log</string>
-    <string>/Users/you/autoremove/logs/run.log</string>
+    <string>/Users/you/autoremove/logs</string>
   </array>
   <key>StartInterval</key>
   <integer>1200</integer>
@@ -228,7 +230,7 @@ launchctl unload ~/Library/LaunchAgents/org.tjupt.autoremove-torrents.plist
 
 ### Debian / Ubuntu：systemd 定时器（示例：每 20 分钟）
 
-适合长期跑在 Linux 服务器、需要与 `journalctl` / `systemctl` 统一管理的场景。以下文件需 **root** 创建或修改。示例假定以 **root** 执行 `uv tool install autoremove-torrents-hnr`，默认可执行文件为 **`/root/.local/bin/autoremove-torrents`**；若改过 `UV_TOOL_DIR` / `XDG_*`，在 root 下用 `uv tool dir --bin` 或 `readlink -f "$(command -v autoremove-torrents)"` 核对后再写入 `ExecStart`。`--conf` / `--log` 请按实际部署改成绝对路径。长期以 root 跑删种权限较大，生产环境更稳妥的做法是改为**普通用户**安装工具并在 `[Service]` 里设置 `User=` 指向该用户。
+适合长期跑在 Linux 服务器、需要与 `journalctl` / `systemctl` 统一管理的场景。以下文件需 **root** 创建或修改。示例假定以 **root** 执行 `uv tool install autoremove-torrents-hnr`，默认可执行文件为 **`/root/.local/bin/autoremove-torrents`**；若改过 `UV_TOOL_DIR` / `XDG_*`，在 root 下用 `uv tool dir --bin` 或 `readlink -f "$(command -v autoremove-torrents)"` 核对后再写入 `ExecStart`。`--conf` 为配置文件绝对路径；`--log` 为**日志目录**绝对路径（见上文「日志」）。长期以 root 跑删种权限较大，生产环境更稳妥的做法是改为**普通用户**安装工具并在 `[Service]` 里设置 `User=` 指向该用户。
 
 **1）** `/etc/systemd/system/autoremove-torrents.service`
 
@@ -239,13 +241,15 @@ Wants=network-online.target
 After=network-online.target
 
 [Service]
-# Type=oneshot
 # User=you
 # Group=you
 # 使用绝对路径；若在 venv 中安装则改为 /home/you/autoremove/.venv/bin/autoremove-torrents
 # ExecStart=/home/you/.local/bin/autoremove-torrents --conf=/home/you/autoremove/config.yml --log=/home/you/autoremove/logs/run.log
+Type=oneshot
 Environment=HOME=/root
-ExecStart=/root/.local/bin/autoremove-torrents --conf=/root/autoremove/config.yml --log=/root/autoremove/logs/run.log
+# 确保日志目录存在（--log 必须是目录，程序会写入 autoremove.YYYY-MM-DD.log）
+ExecStartPre=/bin/mkdir -p /root/autoremove/logs
+ExecStart=/root/.local/bin/autoremove-torrents --conf=/root/autoremove/config.yml --log=/root/autoremove/logs
 ```
 
 **2）** `/etc/systemd/system/autoremove-torrents.timer`
@@ -276,7 +280,7 @@ journalctl -u autoremove-torrents.service -n 50 --no-pager
 
 ### Windows：任务计划程序
 
-打开「任务计划程序」，新建任务：触发器选择「每天」后在「高级设置」中将任务配置为**每 20 分钟重复一次**（或新建「一次」触发器并设置重复间隔 20 分钟，按向导界面为准）；操作选择「启动程序」，程序填 `autoremove-torrents` 的完整路径（或 `cmd.exe` / `powershell.exe` 配合参数），参数示例：`--conf=C:\path\to\config.yml --log=C:\path\to\run.log`。注意任务运行账户下的 `PATH` 是否包含该可执行文件所在目录。
+打开「任务计划程序」，新建任务：触发器选择「每天」后在「高级设置」中将任务配置为**每 20 分钟重复一次**（或新建「一次」触发器并设置重复间隔 20 分钟，按向导界面为准）；操作选择「启动程序」，程序填 `autoremove-torrents` 的完整路径（或 `cmd.exe` / `powershell.exe` 配合参数），参数示例：`--conf=C:\path\to\config.yml --log=C:\path\to\logs`（`--log` 为目录）。注意任务运行账户下的 `PATH` 是否包含该可执行文件所在目录。
 
 ## 项目结构
 ### 1 客户端模块 (client/)
