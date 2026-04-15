@@ -41,9 +41,16 @@ class Task(object):
         # Torrents
         self._torrents = set()
         self._remove = set()
+        # hash -> "strategy_name > condition" for deletion log
+        self._remove_reasons = {}
 
         # Client status
         self._client_status = None
+
+        # Deletion logger (writes only to autoremove.deleted.YYYY-MM-DD.log)
+        self._deletion_logger = logger.Logger.register_deletion_logger(
+            __name__ + '.deletion'
+        )
 
         # Allow removing specified torrents(for CI testing only)
         if 'force_delete' in conf:
@@ -111,6 +118,9 @@ class Task(object):
             strategy = Strategy(strategy_name, self._strategies[strategy_name])
             strategy.execute(self._client_status, self._torrents)
             self._remove.update(strategy.remove_list)
+            for hash_, condition in strategy.remove_reasons.items():
+                if hash_ not in self._remove_reasons:
+                    self._remove_reasons[hash_] = '%s > %s' % (strategy_name, condition)
 
     # Remove torrents
     def _remove_torrents(self):
@@ -122,18 +132,29 @@ class Task(object):
         success, failed = self._client.remove_torrents([hash_ for hash_ in delete_list], self._delete_data)
         # Output logs
         for hash_ in success:
-            self._logger.info(
-                'The torrent %s and its data have been removed.' if self._delete_data \
-                else 'The torrent %s has been removed.',
-                delete_list[hash_]
+            msg = 'The torrent %s and its data have been removed.' if self._delete_data \
+                else 'The torrent %s has been removed.'
+            self._logger.info(msg, delete_list[hash_])
+            reason = self._remove_reasons.get(hash_, 'unknown')
+            self._deletion_logger.info(
+                'REMOVED | %s | Task: %s | Reason: %s',
+                delete_list[hash_], self._name, reason
             )
         for torrent in failed:
-            self._logger.error('The torrent %s and its data cannot be removed. Reason: %s' if self._delete_data \
-                else 'The torrent %s cannot be removed. Reason: %s',
-                delete_list[torrent['hash']], torrent['reason']
+            err_msg = 'The torrent %s and its data cannot be removed. Reason: %s' if self._delete_data \
+                else 'The torrent %s cannot be removed. Reason: %s'
+            self._logger.error(err_msg, delete_list[torrent['hash']], torrent['reason'])
+            reason = self._remove_reasons.get(torrent['hash'], 'unknown')
+            self._deletion_logger.error(
+                'FAILED  | %s | Task: %s | Reason: %s | Error: %s',
+                delete_list[torrent['hash']], self._name, reason, torrent['reason']
             )
         # 输出统计结果
         self._logger.info('删除完成 - 成功: %d个, 失败: %d个', len(success), len(failed))
+        self._deletion_logger.info(
+            'SUMMARY | Task: %s | Removed: %d | Failed: %d',
+            self._name, len(success), len(failed)
+        )
 
     # Execute
     def execute(self):

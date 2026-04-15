@@ -4,6 +4,9 @@
 
 ## 新增功能
 
+v2.1.0
+- 新增删除专项日志 `autoremove.deleted.YYYY-MM-DD.log`，单独记录每条种子的删除结果、触发删除的策略与条件名称，以及失败原因
+
 v2.0.0
 - 整体重构，可以根据 H&R 状态码灵活配置删除条件
 - 支持多个策略组合使用
@@ -156,7 +159,22 @@ autoremove-torrents --conf=config.yml
 
 ## 日志
 
-`--log` 表示**日志所在目录**（不是单个日志文件路径）；程序会在该目录下按日期生成 `autoremove.YYYY-MM-DD.log`。使用前请确保目录已存在，例如 `mkdir -p logs`。
+`--log` 表示**日志所在目录**（不是单个日志文件路径）；程序会在该目录下按日期生成两个日志文件：
+
+| 文件 | 内容 |
+|------|------|
+| `autoremove.YYYY-MM-DD.log` | 完整运行日志（连接、过滤、条件判断等所有流程） |
+| `autoremove.deleted.YYYY-MM-DD.log` | **删除专项日志**，每条记录包含种子名称、所属任务、触发删除的策略与条件，失败时附带错误原因 |
+
+删除日志格式示例：
+
+```
+Wed, 15 Apr 2026 01:00:34 INFO  REMOVED | 某种子名称 | Task: my_task | Reason: my_strategy > seeding_time
+Wed, 15 Apr 2026 01:00:35 ERROR FAILED  | 某种子名称 | Task: my_task | Reason: my_strategy > ratio | Error: torrent not found
+Wed, 15 Apr 2026 01:00:35 INFO  SUMMARY | Task: my_task | Removed: 5 | Failed: 1
+```
+
+使用前请确保目录已存在，例如 `mkdir -p logs`。
 
 ```bash
 autoremove-torrents --conf=config.yml --log=logs --debug

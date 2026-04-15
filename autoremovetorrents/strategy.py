@@ -45,6 +45,8 @@ class Strategy(object):
         # Results
         self.remain_list = set()
         self.remove_list = set()
+        # hash -> condition key that triggered removal
+        self.remove_reasons = {}
 
         # Filter ALL
         self._all_categories = conf['all_categories'] if 'all_categories' in conf \
@@ -142,6 +144,9 @@ class Strategy(object):
                 self._logger.debug('Applying condition %s...' % conditions[conf].__name__)
                 self._logger.debug('INPUT: %d torrent(s) to be reserved before applying the condition.' % len(self.remain_list))
 
+                # Snapshot before applying, to detect newly flagged torrents
+                before_remove = set(self.remove_list)
+
                 # Applying condition processor
                 try:
                     # 特殊处理 hnr 条件
@@ -185,7 +190,13 @@ class Strategy(object):
                     # Output
                     self.remain_list = cond.remain
                     self.remove_list.update(cond.remove)
-                    
+
+                    # Record reason for newly flagged torrents
+                    reason_label = ('remove(%s)' % self._conf[conf]) if conf == 'remove' else conf
+                    for torrent in (self.remove_list - before_remove):
+                        if torrent.hash not in self.remove_reasons:
+                            self.remove_reasons[torrent.hash] = reason_label
+
                     # Print updated list to debug log
                     self._logger.debug('OUTPUT: %d torrent(s) to be reserved after applying the condition.' % len(self.remain_list))
                     for torrent in self.remain_list:
